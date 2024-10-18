@@ -1,0 +1,193 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["tracing", "multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+  schemas   = ["public"]
+}
+
+model account {
+  id         String     @id @db.Uuid
+  email      String?
+  provider   String?
+  avatar_url String?
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  first_name String?
+  full_name  String?
+  last_name  String?
+  updated_at DateTime   @default(now()) @db.Timestamptz(6)
+  comment    comment[]
+  feedback   feedback[]
+  upvotes    upvote[]
+
+  @@schema("public")
+}
+
+model comment {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content        String
+  creator_name   String?
+  creator_avatar String?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  creator_id     String?  @db.Uuid
+  feedback_id    String   @db.Uuid
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+  creator        account? @relation(fields: [creator_id], references: [id], onDelete: Restrict)
+  feedback       feedback @relation(fields: [feedback_id], references: [id])
+
+  @@schema("public")
+}
+
+model company {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  logo               String?   @unique
+  slug               String    @unique
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  owner_id           String    @db.Uuid
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+  stripe_customer_id String?
+  subscription       String?
+  subscription_id    String?   @unique
+  members            member[]
+  products           product[]
+
+  @@schema("public")
+}
+
+model member {
+  id         String   @db.Uuid
+  role       role
+  email      String?
+  avatar_url String?
+  company_id String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  full_name  String?
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  company    company  @relation(fields: [company_id], references: [id])
+
+  @@id([id, company_id])
+  @@schema("public")
+}
+
+model product {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  logo          String?      @unique
+  name          String
+  description   String
+  subdomain     String       @unique
+  company_id    String       @db.Uuid
+  created_at    DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime     @default(now()) @db.Timestamptz(6)
+  website       String?
+  colors        Json?
+  anon_settings Json         @default("{}")
+  widget_key    String       @unique
+  icon          String?      @unique
+  roadmap_order Json?
+  feedback      feedback[]
+  company       company      @relation(fields: [company_id], references: [id])
+  tags          tag[]        @relation("ProductTags")
+  status_tags   status_tag[] @relation("StatusTags")
+
+  @@schema("public")
+}
+
+model feedback {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title              String
+  description        String
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  creator_id         String               @db.Uuid
+  product_id         String               @db.Uuid
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  status             String               @default("notstarted")
+  would_pay          Boolean?
+  FeedbackStatusTags FeedbackStatusTags[]
+  comments           comment[]
+  creator            account              @relation(fields: [creator_id], references: [id], map: "feedback_creator_id_fkey")
+  product            product              @relation(fields: [product_id], references: [id], map: "feedback_product_id_fkey")
+  upvotes            upvote[]
+  tags               tag[]                @relation("FeedbackTags")
+
+  @@schema("public")
+}
+
+model upvote {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  feedback_id String   @db.Uuid
+  upvoter_id  String   @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  feedback    feedback @relation(fields: [feedback_id], references: [id])
+  upvoter     account  @relation(fields: [upvoter_id], references: [id])
+
+  @@unique([feedback_id, upvoter_id])
+  @@schema("public")
+}
+
+model tag {
+  type     tagType    @default(standard)
+  id       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name     String
+  value    String     @unique
+  public   Boolean
+  order    Int?       @db.SmallInt
+  feedback feedback[] @relation("FeedbackTags")
+  products product[]  @relation("ProductTags")
+
+  @@schema("public")
+}
+
+model status_tag {
+  id                 String               @id(map: "status_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String?
+  value              String?
+  public             Boolean?
+  starting_order     Int?                 @db.SmallInt
+  type               tagType?
+  color              String?
+  FeedbackStatusTags FeedbackStatusTags[]
+  product            product[]            @relation("StatusTags")
+
+  @@schema("public")
+}
+
+model stripe_customers {
+  company_id         String   @id(map: "stripeCustomers_pkey")
+  stripe_customer_id String?
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("public")
+}
+
+model FeedbackStatusTags {
+  A          String     @db.Uuid
+  B          String     @db.Uuid
+  status_tag status_tag @relation(fields: [A], references: [id], onDelete: Cascade, map: "_FeedbacktatusTags_A_fkey")
+  feedback   feedback   @relation(fields: [B], references: [id], onDelete: Cascade, map: "_FeedbacktatusTags_B_fkey")
+
+  @@unique([A, B], map: "_FeedbacktatusTags_AB_unique")
+  @@index([B], map: "_FeedbacktatusTags_B_index")
+  @@map("_FeedbackStatusTags")
+  @@schema("public")
+}
+
+enum tagType {
+  standard
+  custom
+
+  @@schema("public")
+}
+
+enum role {
+  owner
+  admin
+  member
+
+  @@schema("public")
+}
